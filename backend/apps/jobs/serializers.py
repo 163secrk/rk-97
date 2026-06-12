@@ -1,3 +1,7 @@
+import re
+from datetime import timedelta
+from django.db.models import Q
+from django.utils import timezone
 from rest_framework import serializers
 from .models import Job, Referral
 
@@ -56,3 +60,38 @@ class ReferralCreateSerializer(serializers.ModelSerializer):
         if value.status != 'open':
             raise serializers.ValidationError('该职位已关闭，无法内推')
         return value
+
+    def validate_candidate_phone(self, value):
+        if value:
+            if not re.match(r'^1[3-9]\d{9}$', value):
+                raise serializers.ValidationError('请输入有效的11位手机号码')
+        return value
+
+    def validate_resume(self, value):
+        allowed_extensions = ['.pdf', '.doc', '.docx']
+        file_name = value.name.lower()
+        if not any(file_name.endswith(ext) for ext in allowed_extensions):
+            raise serializers.ValidationError('简历只支持 PDF、DOC、DOCX 格式')
+        max_size = 10 * 1024 * 1024
+        if value.size > max_size:
+            raise serializers.ValidationError('简历文件大小不能超过 10MB')
+        return value
+
+    def validate(self, attrs):
+        candidate_email = attrs.get('candidate_email')
+        candidate_phone = attrs.get('candidate_phone')
+        six_months_ago = timezone.now() - timedelta(days=180)
+
+        query = Q(created_at__gte=six_months_ago)
+        conditions = Q()
+        if candidate_email:
+            conditions |= Q(candidate_email=candidate_email)
+        if candidate_phone:
+            conditions |= Q(candidate_phone=candidate_phone)
+
+        if conditions:
+            query &= conditions
+            existing = Referral.objects.filter(query).first()
+            if existing:
+                raise serializers.ValidationError('该候选人在6个月内已被内推过，不能重复内推')
+        return attrs

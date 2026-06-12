@@ -18,7 +18,9 @@ export default function Layout() {
         </NavLink>
         <ul className="navbar-nav">
           <li><NavLink to="/" end>职位列表</NavLink></li>
-          <li><NavLink to="/my-referrals">我的内推</NavLink></li>
+          {user?.role !== 'hr' && (
+            <li><NavLink to="/my-referrals">我的内推</NavLink></li>
+          )}
           {user?.role === 'hr' && (
             <>
               <li><NavLink to="/jobs/create">发布职位</NavLink></li>

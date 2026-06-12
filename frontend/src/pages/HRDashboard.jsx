@@ -82,8 +82,29 @@ export default function HRDashboard() {
                 <h4>{ref.candidate_name}</h4>
                 <p>
                   推荐至：{ref.job_title} | 推荐人：{ref.referrer_name}
-                  | {ref.candidate_email} | {new Date(ref.created_at).toLocaleDateString()}
+                  | 提交时间：{new Date(ref.created_at).toLocaleDateString()}
                 </p>
+                <div className="candidate-details" style={{ marginTop: 8, fontSize: 14, color: '#555', lineHeight: 1.8 }}>
+                  <div>📧 邮箱：<a href={`mailto:${ref.candidate_email}`}>{ref.candidate_email}</a></div>
+                  <div>📱 电话：{ref.candidate_phone || '未填写'}</div>
+                  {ref.resume && (
+                    <div>📄 简历：<a href={ref.resume} target="_blank" rel="noopener noreferrer">下载查看简历</a></div>
+                  )}
+                  {ref.cover_letter && (
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ fontWeight: 500, marginBottom: 4 }}>💬 推荐语：</div>
+                      <div style={{
+                        background: '#f8f9fa',
+                        padding: '10px 12px',
+                        borderRadius: 6,
+                        whiteSpace: 'pre-wrap',
+                        borderLeft: '3px solid var(--primary)'
+                      }}>
+                        {ref.cover_letter}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="actions">
                 <span className={`status-badge ${ref.status}`}>{statusLabel[ref.status]}</span>
