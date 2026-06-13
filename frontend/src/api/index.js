@@ -53,4 +53,16 @@ export const notificationAPI = {
   markAllAsRead: () => api.post('/notifications/read-all/'),
 }
 
+export const interviewAPI = {
+  getMyInterviews: (params) => api.get('/interviews/my/', { params }),
+  getInterview: (id) => api.get(`/interviews/${id}/`),
+  getInterviewEvaluation: (id) => api.get(`/interviews/${id}/evaluation/`),
+  submitEvaluation: (id, data) => api.post(`/interviews/${id}/evaluation/submit/`, data),
+  updateEvaluation: (id, data) => api.patch(`/interviews/${id}/evaluation/update/`, data),
+  getInterviewerDashboard: () => api.get('/interviewer-dashboard/'),
+  getInterviewers: () => api.get('/interviewers/'),
+  assignInterviewer: (data) => api.post('/interviews/assign/', data),
+  getReferralInterviews: (id) => api.get(`/referrals/${id}/interviews/`),
+}
+
 export default api

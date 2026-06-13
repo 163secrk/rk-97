@@ -1,14 +1,31 @@
 import { useState } from 'react'
 
-const STATUS_OPTIONS = [
-  { value: 'first_interview', label: '初试' },
-  { value: 'second_interview', label: '复试' },
-  { value: 'accepted', label: '已通过' },
-  { value: 'rejected', label: '已淘汰' },
-]
+const STATUS_FLOW = {
+  pending: [
+    { value: 'first_interview', label: '初试' },
+    { value: 'rejected', label: '已淘汰' },
+  ],
+  first_interview: [
+    { value: 'second_interview', label: '复试' },
+    { value: 'rejected', label: '已淘汰' },
+  ],
+  second_interview: [
+    { value: 'accepted', label: '已通过' },
+    { value: 'rejected', label: '已淘汰' },
+  ],
+  accepted: [],
+  rejected: [],
+}
+
+const getDefaultStatus = (currentStatus) => {
+  const allowed = STATUS_FLOW[currentStatus] || []
+  const nonRejected = allowed.filter(s => s.value !== 'rejected')
+  return nonRejected.length > 0 ? nonRejected[0].value : (allowed[0]?.value || '')
+}
 
 export default function StatusUpdateModal({ referral, onClose, onSubmit }) {
-  const [status, setStatus] = useState('first_interview')
+  const availableStatuses = STATUS_FLOW[referral.status] || []
+  const [status, setStatus] = useState(getDefaultStatus(referral.status))
   const [feedback, setFeedback] = useState('')
   const [rating, setRating] = useState(3)
   const [hoverRating, setHoverRating] = useState(0)
@@ -29,8 +46,6 @@ export default function StatusUpdateModal({ referral, onClose, onSubmit }) {
     }
     onSubmit({ status, feedback, rating })
   }
-
-  const availableStatuses = STATUS_OPTIONS.filter(opt => opt.value !== referral.status)
 
   return (
     <div className="modal-overlay" onClick={onClose}>

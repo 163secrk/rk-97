@@ -156,6 +156,54 @@ class UpdateStatusSerializer(serializers.Serializer):
             raise serializers.ValidationError('反馈简报不能为空')
         return value
 
+    def validate(self, attrs):
+        referral = self.context.get('referral')
+        if not referral:
+            return attrs
+
+        old_status = referral.status
+        new_status = attrs['status']
+
+        if old_status == new_status:
+            raise serializers.ValidationError({'status': '状态未发生变化'})
+
+        if old_status == 'rejected':
+            raise serializers.ValidationError({'status': '已淘汰的候选人不能再变更状态'})
+
+        if old_status == 'accepted':
+            raise serializers.ValidationError({'status': '已通过的候选人不能再变更状态'})
+
+        if new_status == 'pending':
+            raise serializers.ValidationError({'status': '不能将状态变更回待审核'})
+
+        if new_status == 'rejected':
+            return attrs
+
+        status_flow = {
+            'pending': ['first_interview'],
+            'first_interview': ['second_interview'],
+            'second_interview': ['accepted'],
+        }
+        allowed_next = status_flow.get(old_status, [])
+        if new_status not in allowed_next:
+            status_names = dict(Referral.STATUS_CHOICES)
+            old_name = status_names.get(old_status, old_status)
+            new_name = status_names.get(new_status, new_status)
+            allowed_names = [status_names.get(s, s) for s in allowed_next]
+            if allowed_next:
+                raise serializers.ValidationError({
+                    'status': (
+                        f'无法从「{old_name}」直接变更为「{new_name}」。'
+                        f'允许的下一状态：{", ".join(allowed_names)}、已淘汰'
+                    )
+                })
+            else:
+                raise serializers.ValidationError({
+                    'status': f'「{old_name}」状态不允许再变更为「{new_name}」'
+                })
+
+        return attrs
+
 
 class NotificationSerializer(serializers.ModelSerializer):
     class Meta:

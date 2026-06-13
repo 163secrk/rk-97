@@ -101,7 +101,7 @@ def update_referral_status_view(request, pk):
     if referral.job.created_by != request.user:
         return Response({'detail': '只有该职位的HR可以更新状态'}, status=status.HTTP_403_FORBIDDEN)
 
-    serializer = UpdateStatusSerializer(data=request.data)
+    serializer = UpdateStatusSerializer(data=request.data, context={'referral': referral})
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

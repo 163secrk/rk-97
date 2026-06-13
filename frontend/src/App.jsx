@@ -10,6 +10,8 @@ import JobCreate from './pages/JobCreate'
 import MyReferrals from './pages/MyReferrals'
 import HRDashboard from './pages/HRDashboard'
 import ReferralCreate from './pages/ReferralCreate'
+import InterviewerDashboard from './pages/InterviewerDashboard'
+import InterviewDetail from './pages/InterviewDetail'
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
@@ -23,6 +25,14 @@ function HRRoute({ children }) {
   if (loading) return <div className="loading">加载中...</div>
   if (!user) return <Navigate to="/login" replace />
   if (user.role !== 'hr') return <Navigate to="/" replace />
+  return children
+}
+
+function InterviewerRoute({ children }) {
+  const { user, loading } = useAuth()
+  if (loading) return <div className="loading">加载中...</div>
+  if (!user) return <Navigate to="/login" replace />
+  if (user.role !== 'interviewer') return <Navigate to="/" replace />
   return children
 }
 
@@ -46,6 +56,8 @@ function AppRoutes() {
         <Route path="jobs/:id/edit" element={<HRRoute><JobCreate /></HRRoute>} />
         <Route path="my-referrals" element={<ProtectedRoute><MyReferrals /></ProtectedRoute>} />
         <Route path="hr-dashboard" element={<HRRoute><HRDashboard /></HRRoute>} />
+        <Route path="interviewer-dashboard" element={<InterviewerRoute><InterviewerDashboard /></InterviewerRoute>} />
+        <Route path="interviews/:id" element={<InterviewerRoute><InterviewDetail /></InterviewerRoute>} />
       </Route>
     </Routes>
   )

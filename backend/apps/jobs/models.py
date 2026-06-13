@@ -83,6 +83,38 @@ class Referral(models.Model):
             raise ValueError('评分必须在 1-5 星之间')
 
         old_status = self.status
+
+        if old_status == new_status:
+            raise ValueError('状态未发生变化')
+
+        if old_status == 'rejected':
+            raise ValueError('已淘汰的候选人不能再变更状态')
+
+        if old_status == 'accepted':
+            raise ValueError('已通过的候选人不能再变更状态')
+
+        if new_status == 'pending':
+            raise ValueError('不能将状态变更回待审核')
+
+        if new_status == 'rejected':
+            pass
+        else:
+            status_flow = {
+                'pending': ['first_interview'],
+                'first_interview': ['second_interview'],
+                'second_interview': ['accepted'],
+            }
+            allowed_next = status_flow.get(old_status, [])
+            if new_status not in allowed_next:
+                status_names = dict(self.STATUS_CHOICES)
+                old_name = status_names.get(old_status, old_status)
+                new_name = status_names.get(new_status, new_status)
+                allowed_names = [status_names.get(s, s) for s in allowed_next]
+                raise ValueError(
+                    f'无法从「{old_name}」直接变更为「{new_name}」。'
+                    f'允许的下一状态：{", ".join(allowed_names)}、已淘汰'
+                )
+
         self.status = new_status
         self.save()
 

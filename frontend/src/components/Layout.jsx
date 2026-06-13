@@ -64,7 +64,13 @@ export default function Layout() {
     handleMarkAsRead(notification.id)
     setShowDropdown(false)
     if (notification.referral) {
-      navigate('/my-referrals')
+      if (user?.role === 'interviewer') {
+        navigate('/interviewer-dashboard')
+      } else if (user?.role === 'hr') {
+        navigate('/hr-dashboard')
+      } else {
+        navigate('/my-referrals')
+      }
     }
   }
 
@@ -76,7 +82,7 @@ export default function Layout() {
         </NavLink>
         <ul className="navbar-nav">
           <li><NavLink to="/" end>职位列表</NavLink></li>
-          {user?.role !== 'hr' && (
+          {user?.role !== 'hr' && user?.role !== 'interviewer' && (
             <li><NavLink to="/my-referrals">我的内推</NavLink></li>
           )}
           {user?.role === 'hr' && (
@@ -84,6 +90,9 @@ export default function Layout() {
               <li><NavLink to="/jobs/create">发布职位</NavLink></li>
               <li><NavLink to="/hr-dashboard">管理看板</NavLink></li>
             </>
+          )}
+          {user?.role === 'interviewer' && (
+            <li><NavLink to="/interviewer-dashboard">面试官看板</NavLink></li>
           )}
         </ul>
         <div className="navbar-user">
@@ -127,7 +136,9 @@ export default function Layout() {
               )}
             </div>
           )}
-          <span className={`role-badge ${user?.role}`}>{user?.role === 'hr' ? 'HR' : '员工'}</span>
+          <span className={`role-badge ${user?.role}`}>
+            {user?.role === 'hr' ? 'HR' : user?.role === 'interviewer' ? '面试官' : '员工'}
+          </span>
           <span>{user?.username}</span>
           <button className="btn btn-outline btn-sm" onClick={handleLogout}>退出</button>
         </div>

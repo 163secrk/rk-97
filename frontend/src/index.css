@@ -278,6 +278,11 @@ body {
   color: var(--success);
 }
 
+.role-badge.interviewer {
+  background: var(--warning-light);
+  color: var(--warning);
+}
+
 .main-content {
   flex: 1;
   max-width: 1200px;
