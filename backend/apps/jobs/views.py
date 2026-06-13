@@ -65,7 +65,7 @@ class ReferralListView(generics.ListAPIView):
     def get_queryset(self):
         user = self.request.user
         if user.role == 'hr':
-            return Referral.objects.filter(job__created_by=user)
+            return Referral.objects.all()
         return Referral.objects.filter(referrer=user)
 
 
@@ -98,8 +98,8 @@ def update_referral_status_view(request, pk):
     except Referral.DoesNotExist:
         return Response({'detail': '内推记录不存在'}, status=status.HTTP_404_NOT_FOUND)
 
-    if referral.job.created_by != request.user:
-        return Response({'detail': '只有该职位的HR可以更新状态'}, status=status.HTTP_403_FORBIDDEN)
+    if request.user.role != 'hr':
+        return Response({'detail': '只有HR可以更新状态'}, status=status.HTTP_403_FORBIDDEN)
 
     serializer = UpdateStatusSerializer(data=request.data, context={'referral': referral})
     if not serializer.is_valid():
@@ -131,13 +131,11 @@ def my_referrals_view(request):
 def hr_dashboard_view(request):
     if request.user.role != 'hr':
         return Response({'detail': '仅HR可访问'}, status=status.HTTP_403_FORBIDDEN)
-    jobs = Job.objects.filter(created_by=request.user)
+    jobs = Job.objects.all()
     total_jobs = jobs.count()
     open_jobs = jobs.filter(status='open').count()
-    total_referrals = Referral.objects.filter(job__created_by=request.user).count()
-    pending_referrals = Referral.objects.filter(
-        job__created_by=request.user, status='pending'
-    ).count()
+    total_referrals = Referral.objects.count()
+    pending_referrals = Referral.objects.filter(status='pending').count()
     return Response({
         'total_jobs': total_jobs,
         'open_jobs': open_jobs,
@@ -186,7 +184,7 @@ def referral_progress_view(request, pk):
     except Referral.DoesNotExist:
         return Response({'detail': '内推记录不存在'}, status=status.HTTP_404_NOT_FOUND)
 
-    if referral.referrer != request.user and referral.job.created_by != request.user:
+    if referral.referrer != request.user and request.user.role != 'hr':
         return Response({'detail': '无权查看'}, status=status.HTTP_403_FORBIDDEN)
 
     progresses = referral.progresses.all()
@@ -216,11 +214,6 @@ def assign_interviewer_view(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     referral = serializer.validated_data['referral']
-    if referral.job.created_by != request.user:
-        return Response(
-            {'detail': '只能为自己发布的职位指派面试官'},
-            status=status.HTTP_403_FORBIDDEN,
-        )
 
     interview = serializer.save()
 
@@ -251,7 +244,7 @@ def referral_interviews_view(request, pk):
 
     if (
         referral.referrer != request.user
-        and referral.job.created_by != request.user
+        and request.user.role != 'hr'
         and request.user.role != 'interviewer'
     ):
         return Response({'detail': '无权查看'}, status=status.HTTP_403_FORBIDDEN)
@@ -283,7 +276,7 @@ def interview_detail_view(request, pk):
 
     if (
         interview.interviewer != request.user
-        and interview.referral.job.created_by != request.user
+        and request.user.role != 'hr'
     ):
         return Response({'detail': '无权查看'}, status=status.HTTP_403_FORBIDDEN)
 
@@ -386,7 +379,7 @@ def interview_evaluation_view(request, pk):
 
     if (
         interview.interviewer != request.user
-        and interview.referral.job.created_by != request.user
+        and request.user.role != 'hr'
     ):
         return Response({'detail': '无权查看'}, status=status.HTTP_403_FORBIDDEN)
 

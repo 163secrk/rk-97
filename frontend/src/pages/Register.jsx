@@ -67,6 +67,7 @@ export default function Register() {
             <select value={form.role} onChange={(e) => handleChange('role', e.target.value)}>
               <option value="employee">员工</option>
               <option value="hr">HR</option>
+              <option value="interviewer">面试官</option>
             </select>
           </div>
           <div className="form-group">
