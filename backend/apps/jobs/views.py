@@ -3,12 +3,15 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import Job, Referral, CandidateProgress, Notification
+from .models import Job, Referral, CandidateProgress, Notification, Interview, InterviewEvaluation
 from .serializers import (
     JobSerializer, JobListSerializer,
     ReferralSerializer, ReferralCreateSerializer,
     UpdateStatusSerializer, CandidateProgressSerializer,
     NotificationSerializer,
+    InterviewSerializer, InterviewListSerializer,
+    InterviewCreateSerializer, InterviewEvaluationSerializer,
+    InterviewEvaluationCreateSerializer, InterviewerSerializer,
 )
 
 
@@ -189,3 +192,221 @@ def referral_progress_view(request, pk):
     progresses = referral.progresses.all()
     serializer = CandidateProgressSerializer(progresses, many=True)
     return Response(serializer.data)
+
+
+class IsInterviewer(permissions.BasePermission):
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.role == 'interviewer'
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsHR])
+def list_interviewers_view(request):
+    from apps.accounts.models import User
+    interviewers = User.objects.filter(role='interviewer')
+    serializer = InterviewerSerializer(interviewers, many=True)
+    return Response(serializer.data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, IsHR])
+def assign_interviewer_view(request):
+    serializer = InterviewCreateSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    referral = serializer.validated_data['referral']
+    if referral.job.created_by != request.user:
+        return Response(
+            {'detail': '只能为自己发布的职位指派面试官'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    interview = serializer.save()
+
+    Notification.objects.create(
+        user=interview.interviewer,
+        title=f'新的面试指派',
+        content=(
+            f'您被指派为候选人「{referral.candidate_name}」'
+            f'（职位：{referral.job.title}）的{interview.get_round_display()}面试官。\n'
+            f'请及时安排面试并填写评价。'
+        ),
+        referral=referral,
+    )
+
+    return Response(
+        InterviewSerializer(interview).data,
+        status=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def referral_interviews_view(request, pk):
+    try:
+        referral = Referral.objects.get(pk=pk)
+    except Referral.DoesNotExist:
+        return Response({'detail': '内推记录不存在'}, status=status.HTTP_404_NOT_FOUND)
+
+    if (
+        referral.referrer != request.user
+        and referral.job.created_by != request.user
+        and request.user.role != 'interviewer'
+    ):
+        return Response({'detail': '无权查看'}, status=status.HTTP_403_FORBIDDEN)
+
+    interviews = referral.interviews.all()
+    serializer = InterviewSerializer(interviews, many=True)
+    return Response(serializer.data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsInterviewer])
+def my_interviews_view(request):
+    status_filter = request.query_params.get('status')
+    interviews = Interview.objects.filter(interviewer=request.user)
+    if status_filter:
+        interviews = interviews.filter(status=status_filter)
+
+    serializer = InterviewListSerializer(interviews, many=True)
+    return Response(serializer.data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def interview_detail_view(request, pk):
+    try:
+        interview = Interview.objects.get(pk=pk)
+    except Interview.DoesNotExist:
+        return Response({'detail': '面试记录不存在'}, status=status.HTTP_404_NOT_FOUND)
+
+    if (
+        interview.interviewer != request.user
+        and interview.referral.job.created_by != request.user
+    ):
+        return Response({'detail': '无权查看'}, status=status.HTTP_403_FORBIDDEN)
+
+    serializer = InterviewSerializer(interview)
+    return Response(serializer.data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, IsInterviewer])
+def submit_evaluation_view(request, pk):
+    try:
+        interview = Interview.objects.get(pk=pk)
+    except Interview.DoesNotExist:
+        return Response({'detail': '面试记录不存在'}, status=status.HTTP_404_NOT_FOUND)
+
+    if interview.interviewer != request.user:
+        return Response(
+            {'detail': '只能评价自己负责的面试'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    if interview.status == 'completed' and hasattr(interview, 'evaluation'):
+        return Response(
+            {'detail': '该面试已提交过评价，如需修改请使用更新接口'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    serializer = InterviewEvaluationCreateSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    evaluation = serializer.save(
+        interview=interview,
+        evaluated_by=request.user,
+    )
+
+    interview.status = 'completed'
+    interview.save()
+
+    referral = interview.referral
+    Notification.objects.create(
+        user=referral.job.created_by,
+        title=f'面试评价已提交',
+        content=(
+            f'候选人「{referral.candidate_name}」'
+            f'（职位：{referral.job.title}）的{interview.get_round_display()}'
+            f'面试评价已由 {request.user.username} 提交。\n'
+            f'总分：{evaluation.total_score} 分\n'
+            f'建议：{evaluation.get_recommendation_display()}'
+        ),
+        referral=referral,
+    )
+
+    return Response(
+        InterviewEvaluationSerializer(evaluation).data,
+        status=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(['PUT', 'PATCH'])
+@permission_classes([IsAuthenticated, IsInterviewer])
+def update_evaluation_view(request, pk):
+    try:
+        interview = Interview.objects.get(pk=pk)
+    except Interview.DoesNotExist:
+        return Response({'detail': '面试记录不存在'}, status=status.HTTP_404_NOT_FOUND)
+
+    if interview.interviewer != request.user:
+        return Response(
+            {'detail': '只能修改自己负责的面试评价'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    if not hasattr(interview, 'evaluation'):
+        return Response(
+            {'detail': '该面试尚未提交评价，请先提交'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    serializer = InterviewEvaluationCreateSerializer(
+        interview.evaluation,
+        data=request.data,
+        partial=True,
+    )
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    evaluation = serializer.save()
+
+    return Response(InterviewEvaluationSerializer(evaluation).data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def interview_evaluation_view(request, pk):
+    try:
+        interview = Interview.objects.get(pk=pk)
+    except Interview.DoesNotExist:
+        return Response({'detail': '面试记录不存在'}, status=status.HTTP_404_NOT_FOUND)
+
+    if (
+        interview.interviewer != request.user
+        and interview.referral.job.created_by != request.user
+    ):
+        return Response({'detail': '无权查看'}, status=status.HTTP_403_FORBIDDEN)
+
+    if not hasattr(interview, 'evaluation'):
+        return Response({'detail': '该面试暂无评价'}, status=status.HTTP_404_NOT_FOUND)
+
+    serializer = InterviewEvaluationSerializer(interview.evaluation)
+    return Response(serializer.data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsInterviewer])
+def interviewer_dashboard_view(request):
+    interviews = Interview.objects.filter(interviewer=request.user)
+    total = interviews.count()
+    pending = interviews.filter(status='pending').count()
+    completed = interviews.filter(status='completed').count()
+
+    return Response({
+        'total_interviews': total,
+        'pending_interviews': pending,
+        'completed_interviews': completed,
+    })

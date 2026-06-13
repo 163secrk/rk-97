@@ -2,7 +2,7 @@ from django import forms
 from django.contrib import admin, messages
 from django.contrib.admin import helpers
 from django.template.response import TemplateResponse
-from .models import Job, Referral, CandidateProgress, Notification
+from .models import Job, Referral, CandidateProgress, Notification, Interview, InterviewEvaluation
 
 
 class CandidateProgressInline(admin.TabularInline):
@@ -128,6 +128,44 @@ class NotificationAdmin(admin.ModelAdmin):
     list_filter = ['is_read']
     search_fields = ['title', 'content']
     readonly_fields = ['user', 'title', 'content', 'referral', 'created_at']
+
+    def has_add_permission(self, request):
+        return False
+
+
+class InterviewEvaluationInline(admin.StackedInline):
+    model = InterviewEvaluation
+    extra = 0
+    readonly_fields = ['evaluated_by', 'created_at', 'updated_at', 'total_score']
+    fields = [
+        'technical_score', 'communication_score', 'teamwork_score',
+        'problem_solving_score', 'cultural_fit_score', 'learning_ability_score',
+        'overall_comment', 'strengths', 'weaknesses',
+        'total_score', 'recommendation', 'evaluated_by', 'created_at',
+    ]
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(Interview)
+class InterviewAdmin(admin.ModelAdmin):
+    list_display = ['referral', 'interviewer', 'round', 'status', 'scheduled_at', 'created_at']
+    list_filter = ['status', 'round']
+    search_fields = ['referral__candidate_name', 'interviewer__username']
+    readonly_fields = ['created_at', 'updated_at']
+    inlines = [InterviewEvaluationInline]
+
+
+@admin.register(InterviewEvaluation)
+class InterviewEvaluationAdmin(admin.ModelAdmin):
+    list_display = ['interview', 'total_score', 'recommendation', 'evaluated_by', 'created_at']
+    list_filter = ['recommendation']
+    search_fields = ['interview__referral__candidate_name', 'overall_comment']
+    readonly_fields = ['interview', 'total_score', 'evaluated_by', 'created_at', 'updated_at']
 
     def has_add_permission(self, request):
         return False

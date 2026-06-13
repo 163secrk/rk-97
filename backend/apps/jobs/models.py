@@ -169,3 +169,118 @@ class Notification(models.Model):
     def __str__(self):
         return f'{self.user.username} - {self.title}'
 
+
+class Interview(models.Model):
+    STATUS_CHOICES = [
+        ('pending', '待面试'),
+        ('completed', '已完成'),
+        ('cancelled', '已取消'),
+    ]
+    ROUND_CHOICES = [
+        ('first', '初试'),
+        ('second', '复试'),
+        ('third', '终试'),
+    ]
+    referral = models.ForeignKey(
+        Referral,
+        on_delete=models.CASCADE,
+        related_name='interviews',
+        verbose_name='内推记录',
+    )
+    interviewer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='interviews',
+        verbose_name='面试官',
+    )
+    round = models.CharField('面试轮次', max_length=20, choices=ROUND_CHOICES, default='first')
+    scheduled_at = models.DateTimeField('面试时间', null=True, blank=True)
+    status = models.CharField('状态', max_length=20, choices=STATUS_CHOICES, default='pending')
+    notes = models.TextField('备注', blank=True, default='')
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+    updated_at = models.DateTimeField('更新时间', auto_now=True)
+
+    class Meta:
+        verbose_name = '面试'
+        verbose_name_plural = verbose_name
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.referral.candidate_name} - {self.get_round_display()} - {self.interviewer.username}'
+
+
+class InterviewEvaluation(models.Model):
+    RECOMMENDATION_CHOICES = [
+        ('pass', '推荐进入下一轮'),
+        ('fail', '不推荐'),
+        ('hold', '待定'),
+    ]
+    interview = models.OneToOneField(
+        Interview,
+        on_delete=models.CASCADE,
+        related_name='evaluation',
+        verbose_name='面试',
+    )
+    technical_score = models.PositiveSmallIntegerField('技术能力', default=0, help_text='1-10分')
+    communication_score = models.PositiveSmallIntegerField('沟通能力', default=0, help_text='1-10分')
+    teamwork_score = models.PositiveSmallIntegerField('团队协作', default=0, help_text='1-10分')
+    problem_solving_score = models.PositiveSmallIntegerField('问题解决能力', default=0, help_text='1-10分')
+    cultural_fit_score = models.PositiveSmallIntegerField('文化适配', default=0, help_text='1-10分')
+    learning_ability_score = models.PositiveSmallIntegerField('学习能力', default=0, help_text='1-10分')
+    overall_comment = models.TextField('综合评价', blank=True, default='')
+    strengths = models.TextField('优点', blank=True, default='')
+    weaknesses = models.TextField('待改进点', blank=True, default='')
+    total_score = models.DecimalField('总分', max_digits=5, decimal_places=2, default=0)
+    recommendation = models.CharField(
+        '建议',
+        max_length=20,
+        choices=RECOMMENDATION_CHOICES,
+        blank=True,
+        default='',
+    )
+    evaluated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='evaluations',
+        verbose_name='评价人',
+    )
+    created_at = models.DateTimeField('提交时间', auto_now_add=True)
+    updated_at = models.DateTimeField('更新时间', auto_now=True)
+
+    class Meta:
+        verbose_name = '面试评价'
+        verbose_name_plural = verbose_name
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.interview.referral.candidate_name} - 评价'
+
+    def calculate_total_score(self):
+        scores = [
+            self.technical_score,
+            self.communication_score,
+            self.teamwork_score,
+            self.problem_solving_score,
+            self.cultural_fit_score,
+            self.learning_ability_score,
+        ]
+        valid_scores = [s for s in scores if 1 <= s <= 10]
+        if not valid_scores:
+            return 0
+        return round(sum(valid_scores) / len(valid_scores), 2)
+
+    def generate_recommendation(self):
+        total = self.calculate_total_score()
+        if total >= 8:
+            return 'pass'
+        elif total >= 6:
+            return 'hold'
+        else:
+            return 'fail'
+
+    def save(self, *args, **kwargs):
+        self.total_score = self.calculate_total_score()
+        if not self.recommendation:
+            self.recommendation = self.generate_recommendation()
+        super().save(*args, **kwargs)
+

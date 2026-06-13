@@ -3,7 +3,7 @@ from datetime import timedelta
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers
-from .models import Job, Referral, CandidateProgress, Notification
+from .models import Job, Referral, CandidateProgress, Notification, Interview, InterviewEvaluation
 
 
 class JobSerializer(serializers.ModelSerializer):
@@ -164,3 +164,159 @@ class NotificationSerializer(serializers.ModelSerializer):
             'id', 'title', 'content', 'referral', 'is_read', 'created_at',
         ]
         read_only_fields = ['id', 'title', 'content', 'referral', 'created_at']
+
+
+class InterviewEvaluationSerializer(serializers.ModelSerializer):
+    recommendation_display = serializers.CharField(
+        source='get_recommendation_display', read_only=True
+    )
+    evaluated_by_name = serializers.CharField(
+        source='evaluated_by.username', read_only=True
+    )
+
+    class Meta:
+        model = InterviewEvaluation
+        fields = [
+            'id', 'interview',
+            'technical_score', 'communication_score', 'teamwork_score',
+            'problem_solving_score', 'cultural_fit_score', 'learning_ability_score',
+            'overall_comment', 'strengths', 'weaknesses',
+            'total_score', 'recommendation', 'recommendation_display',
+            'evaluated_by', 'evaluated_by_name', 'created_at', 'updated_at',
+        ]
+        read_only_fields = [
+            'id', 'interview', 'total_score', 'recommendation',
+            'evaluated_by', 'created_at', 'updated_at',
+        ]
+
+
+class InterviewEvaluationCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InterviewEvaluation
+        fields = [
+            'technical_score', 'communication_score', 'teamwork_score',
+            'problem_solving_score', 'cultural_fit_score', 'learning_ability_score',
+            'overall_comment', 'strengths', 'weaknesses', 'recommendation',
+        ]
+
+    def validate_scores(self, value):
+        if value < 1 or value > 10:
+            raise serializers.ValidationError('评分必须在 1-10 分之间')
+        return value
+
+    def validate_technical_score(self, value):
+        return self.validate_scores(value)
+
+    def validate_communication_score(self, value):
+        return self.validate_scores(value)
+
+    def validate_teamwork_score(self, value):
+        return self.validate_scores(value)
+
+    def validate_problem_solving_score(self, value):
+        return self.validate_scores(value)
+
+    def validate_cultural_fit_score(self, value):
+        return self.validate_scores(value)
+
+    def validate_learning_ability_score(self, value):
+        return self.validate_scores(value)
+
+
+class InterviewSerializer(serializers.ModelSerializer):
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    round_display = serializers.CharField(source='get_round_display', read_only=True)
+    interviewer_name = serializers.CharField(
+        source='interviewer.username', read_only=True
+    )
+    candidate_name = serializers.CharField(
+        source='referral.candidate_name', read_only=True
+    )
+    job_title = serializers.CharField(
+        source='referral.job.title', read_only=True
+    )
+    referral_status = serializers.CharField(
+        source='referral.status', read_only=True
+    )
+    evaluation = InterviewEvaluationSerializer(read_only=True)
+
+    class Meta:
+        model = Interview
+        fields = [
+            'id', 'referral', 'referral_status',
+            'candidate_name', 'job_title',
+            'interviewer', 'interviewer_name',
+            'round', 'round_display',
+            'scheduled_at', 'status', 'status_display',
+            'notes', 'evaluation',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = [
+            'id', 'created_at', 'updated_at', 'status',
+        ]
+
+
+class InterviewListSerializer(serializers.ModelSerializer):
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    round_display = serializers.CharField(source='get_round_display', read_only=True)
+    interviewer_name = serializers.CharField(
+        source='interviewer.username', read_only=True
+    )
+    candidate_name = serializers.CharField(
+        source='referral.candidate_name', read_only=True
+    )
+    job_title = serializers.CharField(
+        source='referral.job.title', read_only=True
+    )
+    has_evaluation = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Interview
+        fields = [
+            'id', 'candidate_name', 'job_title',
+            'interviewer_name', 'round', 'round_display',
+            'scheduled_at', 'status', 'status_display',
+            'has_evaluation', 'created_at',
+        ]
+
+    def get_has_evaluation(self, obj):
+        return hasattr(obj, 'evaluation')
+
+
+class InterviewCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Interview
+        fields = [
+            'referral', 'interviewer', 'round', 'scheduled_at', 'notes',
+        ]
+
+    def validate_interviewer(self, value):
+        if value.role != 'interviewer':
+            raise serializers.ValidationError('只能指派面试官角色的用户')
+        return value
+
+    def validate(self, attrs):
+        referral = attrs.get('referral')
+        interview_round = attrs.get('round')
+        interviewer = attrs.get('interviewer')
+
+        if referral and interview_round and interviewer:
+            existing = Interview.objects.filter(
+                referral=referral,
+                round=interview_round,
+                interviewer=interviewer,
+                status__in=['pending', 'completed'],
+            ).exists()
+            if existing:
+                raise serializers.ValidationError(
+                    '该面试官已被指派过此轮面试'
+                )
+        return attrs
+
+
+class InterviewerSerializer(serializers.ModelSerializer):
+    class Meta:
+        from apps.accounts.models import User
+        model = User
+        fields = ['id', 'username', 'department', 'avatar']
+        extra_kwargs = {'avatar': {'required': False}}

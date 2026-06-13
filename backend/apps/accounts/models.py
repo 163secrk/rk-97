@@ -6,8 +6,9 @@ class User(AbstractUser):
     ROLE_CHOICES = [
         ('hr', 'HR'),
         ('employee', '员工'),
+        ('interviewer', '面试官'),
     ]
-    role = models.CharField('角色', max_length=10, choices=ROLE_CHOICES, default='employee')
+    role = models.CharField('角色', max_length=20, choices=ROLE_CHOICES, default='employee')
     department = models.CharField('部门', max_length=100, blank=True, default='')
     phone = models.CharField('手机号', max_length=20, blank=True, default='')
     avatar = models.ImageField('头像', upload_to='avatars/', blank=True, null=True)
