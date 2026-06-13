@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { jobAPI, referralAPI } from '../api'
 import { useAuth } from '../contexts/AuthContext'
+import StatusUpdateModal from '../components/StatusUpdateModal'
 
 export default function JobDetail() {
   const { id } = useParams()
@@ -10,6 +11,8 @@ export default function JobDetail() {
   const [job, setJob] = useState(null)
   const [referrals, setReferrals] = useState([])
   const [loading, setLoading] = useState(true)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [selectedReferral, setSelectedReferral] = useState(null)
 
   useEffect(() => {
     const fetch = async () => {
@@ -47,12 +50,24 @@ export default function JobDetail() {
     } catch {}
   }
 
-  const handleReferralStatus = async (refId, newStatus) => {
+  const openStatusModal = (referral) => {
+    setSelectedReferral(referral)
+    setModalOpen(true)
+  }
+
+  const handleReferralStatusUpdate = async (data) => {
+    if (!selectedReferral) return
     try {
-      await referralAPI.updateReferralStatus(refId, newStatus)
+      await referralAPI.updateReferralStatus(selectedReferral.id, data)
       setReferrals((prev) =>
-        prev.map((r) => (r.id === refId ? { ...r, status: newStatus } : r))
+        prev.map((r) =>
+          r.id === selectedReferral.id
+            ? { ...r, status: data.status }
+            : r
+        )
       )
+      setModalOpen(false)
+      setSelectedReferral(null)
     } catch {}
   }
 
@@ -60,12 +75,14 @@ export default function JobDetail() {
   if (!job) return null
 
   const isCreator = job.created_by === user?.id
+  const canViewReferrals = isCreator || user?.role === 'hr'
 
   const statusLabel = {
     pending: '待审核',
-    reviewing: '审核中',
+    first_interview: '初试',
+    second_interview: '复试',
     accepted: '已通过',
-    rejected: '已拒绝',
+    rejected: '已淘汰',
   }
 
   return (
@@ -117,7 +134,7 @@ export default function JobDetail() {
         </div>
       </div>
 
-      {isCreator && referrals.length > 0 && (
+      {canViewReferrals && referrals.length > 0 && (
         <div style={{ marginTop: 32 }}>
           <h3 style={{ marginBottom: 16, fontSize: 18, fontWeight: 600 }}>内推记录</h3>
           <div className="referral-list">
@@ -126,23 +143,48 @@ export default function JobDetail() {
                 <div className="info">
                   <h4>{ref.candidate_name}</h4>
                   <p>{ref.candidate_email} | 推荐人：{ref.referrer_name} | {new Date(ref.created_at).toLocaleDateString()}</p>
+                  <div className="candidate-details" style={{ marginTop: 8, fontSize: 14, color: '#555', lineHeight: 1.8 }}>
+                    <div>📧 邮箱：<a href={`mailto:${ref.candidate_email}`}>{ref.candidate_email}</a></div>
+                    <div>📱 电话：{ref.candidate_phone || '未填写'}</div>
+                    {ref.resume && (
+                      <div>📄 简历：<a href={ref.resume} target="_blank" rel="noopener noreferrer">下载查看简历</a></div>
+                    )}
+                    {ref.cover_letter && (
+                      <div style={{ marginTop: 8 }}>
+                        <div style={{ fontWeight: 500, marginBottom: 4 }}>💬 推荐语：</div>
+                        <div style={{
+                          background: '#f8f9fa',
+                          padding: '10px 12px',
+                          borderRadius: 6,
+                          whiteSpace: 'pre-wrap',
+                          borderLeft: '3px solid var(--primary)'
+                        }}>
+                          {ref.cover_letter}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="actions">
                   <span className={`status-badge ${ref.status}`}>{statusLabel[ref.status]}</span>
-                  {ref.status === 'pending' && (
-                    <>
-                      <button className="btn btn-success btn-sm" onClick={() => handleReferralStatus(ref.id, 'reviewing')}>审核</button>
-                      <button className="btn btn-danger btn-sm" onClick={() => handleReferralStatus(ref.id, 'rejected')}>拒绝</button>
-                    </>
-                  )}
-                  {ref.status === 'reviewing' && (
-                    <button className="btn btn-success btn-sm" onClick={() => handleReferralStatus(ref.id, 'accepted')}>通过</button>
+                  {isCreator && ref.status !== 'accepted' && ref.status !== 'rejected' && (
+                    <button className="btn btn-primary btn-sm" onClick={() => openStatusModal(ref)}>
+                      更新状态
+                    </button>
                   )}
                 </div>
               </div>
             ))}
           </div>
         </div>
+      )}
+
+      {modalOpen && selectedReferral && (
+        <StatusUpdateModal
+          referral={selectedReferral}
+          onClose={() => { setModalOpen(false); setSelectedReferral(null) }}
+          onSubmit={handleReferralStatusUpdate}
+        />
       )}
     </div>
   )

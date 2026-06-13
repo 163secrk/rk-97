@@ -3,10 +3,12 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import Job, Referral
+from .models import Job, Referral, CandidateProgress, Notification
 from .serializers import (
     JobSerializer, JobListSerializer,
     ReferralSerializer, ReferralCreateSerializer,
+    UpdateStatusSerializer, CandidateProgressSerializer,
+    NotificationSerializer,
 )
 
 
@@ -69,7 +71,14 @@ class ReferralCreateView(generics.CreateAPIView):
     permission_classes = [IsAuthenticated]
 
     def perform_create(self, serializer):
-        serializer.save(referrer=self.request.user)
+        referral = serializer.save(referrer=self.request.user)
+        CandidateProgress.objects.create(
+            referral=referral,
+            status='pending',
+            feedback='内推已提交，等待HR审核',
+            rating=3,
+            updated_by=self.request.user,
+        )
 
 
 class ReferralDetailView(generics.RetrieveAPIView):
@@ -89,13 +98,20 @@ def update_referral_status_view(request, pk):
     if referral.job.created_by != request.user:
         return Response({'detail': '只有该职位的HR可以更新状态'}, status=status.HTTP_403_FORBIDDEN)
 
-    new_status = request.data.get('status')
-    valid_statuses = [s[0] for s in Referral.STATUS_CHOICES]
-    if new_status not in valid_statuses:
-        return Response({'detail': '无效的状态'}, status=status.HTTP_400_BAD_REQUEST)
+    serializer = UpdateStatusSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    referral.status = new_status
-    referral.save()
+    validated_data = serializer.validated_data
+    new_status = validated_data['status']
+    feedback = validated_data['feedback']
+    rating = validated_data['rating']
+
+    try:
+        referral.update_status(new_status, feedback, rating, request.user)
+    except ValueError as e:
+        return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
     return Response(ReferralSerializer(referral).data)
 
 
@@ -125,3 +141,51 @@ def hr_dashboard_view(request):
         'total_referrals': total_referrals,
         'pending_referrals': pending_referrals,
     })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_notifications_view(request):
+    notifications = Notification.objects.filter(user=request.user)
+    unread_count = notifications.filter(is_read=False).count()
+    serializer = NotificationSerializer(notifications, many=True)
+    return Response({
+        'results': serializer.data,
+        'unread_count': unread_count,
+    })
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def mark_notification_read_view(request, pk):
+    try:
+        notification = Notification.objects.get(pk=pk, user=request.user)
+    except Notification.DoesNotExist:
+        return Response({'detail': '通知不存在'}, status=status.HTTP_404_NOT_FOUND)
+
+    notification.is_read = True
+    notification.save()
+    return Response(NotificationSerializer(notification).data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def mark_all_notifications_read_view(request):
+    Notification.objects.filter(user=request.user, is_read=False).update(is_read=True)
+    return Response({'detail': '已全部标记为已读'})
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def referral_progress_view(request, pk):
+    try:
+        referral = Referral.objects.get(pk=pk)
+    except Referral.DoesNotExist:
+        return Response({'detail': '内推记录不存在'}, status=status.HTTP_404_NOT_FOUND)
+
+    if referral.referrer != request.user and referral.job.created_by != request.user:
+        return Response({'detail': '无权查看'}, status=status.HTTP_403_FORBIDDEN)
+
+    progresses = referral.progresses.all()
+    serializer = CandidateProgressSerializer(progresses, many=True)
+    return Response(serializer.data)

@@ -41,9 +41,16 @@ export const referralAPI = {
     headers: { 'Content-Type': 'multipart/form-data' },
   }),
   getReferral: (id) => api.get(`/referrals/${id}/`),
-  updateReferralStatus: (id, status) => api.patch(`/referrals/${id}/status/`, { status }),
+  updateReferralStatus: (id, data) => api.patch(`/referrals/${id}/status/`, data),
+  getReferralProgress: (id) => api.get(`/referrals/${id}/progress/`),
   getMyReferrals: () => api.get('/my-referrals/'),
   getHRDashboard: () => api.get('/hr-dashboard/'),
+}
+
+export const notificationAPI = {
+  getNotifications: () => api.get('/notifications/'),
+  markAsRead: (id) => api.post(`/notifications/${id}/read/`),
+  markAllAsRead: () => api.post('/notifications/read-all/'),
 }
 
 export default api

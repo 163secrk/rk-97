@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react'
 import { referralAPI, jobAPI } from '../api'
+import StatusUpdateModal from '../components/StatusUpdateModal'
 
 export default function HRDashboard() {
   const [stats, setStats] = useState(null)
   const [referrals, setReferrals] = useState([])
   const [loading, setLoading] = useState(true)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [selectedReferral, setSelectedReferral] = useState(null)
 
   useEffect(() => {
     const fetch = async () => {
@@ -23,21 +26,44 @@ export default function HRDashboard() {
     fetch()
   }, [])
 
-  const handleReferralStatus = async (refId, newStatus) => {
+  const openStatusModal = (referral) => {
+    setSelectedReferral(referral)
+    setModalOpen(true)
+  }
+
+  const handleStatusUpdate = async (data) => {
+    if (!selectedReferral) return
     try {
-      await referralAPI.updateReferralStatus(refId, newStatus)
+      await referralAPI.updateReferralStatus(selectedReferral.id, data)
       setReferrals((prev) =>
-        prev.map((r) => (r.id === refId ? { ...r, status: newStatus } : r))
+        prev.map((r) =>
+          r.id === selectedReferral.id
+            ? { ...r, status: data.status }
+            : r
+        )
       )
-      setStats((prev) => prev ? { ...prev, pending_referrals: Math.max(0, prev.pending_referrals - 1) } : prev)
+      setStats((prev) =>
+        prev
+          ? {
+              ...prev,
+              pending_referrals:
+                selectedReferral.status === 'pending'
+                  ? Math.max(0, prev.pending_referrals - 1)
+                  : prev.pending_referrals,
+            }
+          : prev
+      )
+      setModalOpen(false)
+      setSelectedReferral(null)
     } catch {}
   }
 
   const statusLabel = {
     pending: '待审核',
-    reviewing: '审核中',
+    first_interview: '初试',
+    second_interview: '复试',
     accepted: '已通过',
-    rejected: '已拒绝',
+    rejected: '已淘汰',
   }
 
   if (loading) return <div className="loading" style={{ minHeight: 200 }}>加载中...</div>
@@ -108,19 +134,23 @@ export default function HRDashboard() {
               </div>
               <div className="actions">
                 <span className={`status-badge ${ref.status}`}>{statusLabel[ref.status]}</span>
-                {ref.status === 'pending' && (
-                  <>
-                    <button className="btn btn-success btn-sm" onClick={() => handleReferralStatus(ref.id, 'reviewing')}>审核</button>
-                    <button className="btn btn-danger btn-sm" onClick={() => handleReferralStatus(ref.id, 'rejected')}>拒绝</button>
-                  </>
-                )}
-                {ref.status === 'reviewing' && (
-                  <button className="btn btn-success btn-sm" onClick={() => handleReferralStatus(ref.id, 'accepted')}>通过</button>
+                {ref.status !== 'accepted' && ref.status !== 'rejected' && (
+                  <button className="btn btn-primary btn-sm" onClick={() => openStatusModal(ref)}>
+                    更新状态
+                  </button>
                 )}
               </div>
             </div>
           ))}
         </div>
+      )}
+
+      {modalOpen && selectedReferral && (
+        <StatusUpdateModal
+          referral={selectedReferral}
+          onClose={() => { setModalOpen(false); setSelectedReferral(null) }}
+          onSubmit={handleStatusUpdate}
+        />
       )}
     </div>
   )
